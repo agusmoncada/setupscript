@@ -29,7 +29,7 @@ fi
 
 # Install pip and Python packages
 log "Ensuring pip and setuptools are correctly installed."
-python3 -m pip install pip setuptools==58.0.4 wheel >> $LOG_FILE 2>&1
+python3 -m pip install --upgrade pip setuptools wheel >> $LOG_FILE 2>&1
 if [ $? -ne 0 ]; then
     log "Error installing pip and setuptools. Exiting."
     exit 1
