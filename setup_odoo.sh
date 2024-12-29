@@ -36,7 +36,7 @@ if [ $? -ne 0 ]; then
 fi
 
 log "Installing Python dependencies for l10n_ar."
-python3 -m pip install pyOpenSSL==22.1.0 M2Crypto httplib2>=0.7 cryptography==38.0.4 git+https://github.com/pysimplesoap/pysimplesoap@e1453f385cee119bf8cfb53c763ef212652359f5 git+https://github.com/agusmoncada/pyafipws >> $LOG_FILE 2>&1
+python3 -m pip install astor pyOpenSSL==22.1.0 M2Crypto httplib2>=0.7 cryptography==38.0.4 git+https://github.com/pysimplesoap/pysimplesoap@e1453f385cee119bf8cfb53c763ef212652359f5 git+https://github.com/agusmoncada/pyafipws >> $LOG_FILE 2>&1
 if [ $? -ne 0 ]; then
     log "Error installing Python dependencies. Exiting."
     exit 1
