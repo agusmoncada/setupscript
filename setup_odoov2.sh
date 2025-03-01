@@ -25,18 +25,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Ensure permissions to write to the log file
-if [ ! -w $(dirname "$LOG_FILE") ]; then
-    echo "Error: Insufficient permissions to write to $(dirname "$LOG_FILE"). Please run as root or specify a different log path." >&2
-    exit 1
-fi
-
 log "Starting Odoo v16 server setup for Cloudpepper environment."
-
-# Check if Odoo is already installed
-if [ ! -d "$ODOO_SOURCE" ]; then
-    log "Warning: Odoo source directory not found at $ODOO_SOURCE"
-fi
 
 # Update and install system dependencies
 log "Updating package list."
@@ -44,27 +33,16 @@ apt update -y >> $LOG_FILE 2>&1
 check_status "Package update"
 
 log "Installing required system packages."
-apt install -y build-essential wget swig libssl-dev python3-dev python3-pip >> $LOG_FILE 2>&1
+apt install -y build-essential wget swig libssl-dev python3-dev python3-pip git >> $LOG_FILE 2>&1
 check_status "System packages installation"
 
 # Verify Python setup
 log "Python version:"
 python3 --version >> $LOG_FILE 2>&1
 
-# Fix pip issues - first ensure it's working correctly
-log "Ensuring pip is properly installed."
-apt install -y python3-pip >> $LOG_FILE 2>&1
-check_status "Python3-pip installation"
-
-# Try to upgrade pip directly from get-pip.py if there are issues
-log "Upgrading pip using alternative method."
-wget https://bootstrap.pypa.io/get-pip.py -O /tmp/get-pip.py >> $LOG_FILE 2>&1
-python3 /tmp/get-pip.py >> $LOG_FILE 2>&1
-check_status "Pip installation from get-pip.py"
-
-# Install setuptools and wheel without version constraints
-log "Installing setuptools and wheel."
-python3 -m pip install --upgrade setuptools wheel >> $LOG_FILE 2>&1
+# Downgrade setuptools to a version known to work with these packages
+log "Installing compatible setuptools version."
+python3 -m pip install setuptools==58.0.0 wheel >> $LOG_FILE 2>&1
 check_status "Setuptools and wheel installation"
 
 log "Pip version:"
@@ -92,14 +70,37 @@ log "Installing cryptography."
 python3 -m pip install cryptography==38.0.4 >> $LOG_FILE 2>&1
 check_status "cryptography installation"
 
-# Install Git repositories
-log "Installing pysimplesoap."
-python3 -m pip install "git+https://github.com/pysimplesoap/pysimplesoap@e1453f385cee119bf8cfb53c763ef212652359f5" >> $LOG_FILE 2>&1
-check_status "pysimplesoap installation"
+# Clone pysimplesoap manually instead of using pip
+log "Installing pysimplesoap manually."
+cd /tmp
+if [ -d "pysimplesoap" ]; then
+    rm -rf pysimplesoap
+fi
 
-log "Installing pyafipws."
-python3 -m pip install "git+https://github.com/agusmoncada/pyafipws" >> $LOG_FILE 2>&1
-check_status "pyafipws installation"
+git clone https://github.com/pysimplesoap/pysimplesoap.git >> $LOG_FILE 2>&1
+cd pysimplesoap
+git checkout e1453f385cee119bf8cfb53c763ef212652359f5 >> $LOG_FILE 2>&1
+
+# Apply a quick fix to the setup.py file
+log "Applying fix to pysimplesoap setup.py."
+sed -i 's/console=\[/# console=\[/' setup.py
+sed -i "s/version='.*'/version='1.08.0'/" setup.py
+
+# Install the package
+python3 setup.py install >> $LOG_FILE 2>&1
+check_status "pysimplesoap manual installation"
+
+# Install pyafipws manually too
+log "Installing pyafipws manually."
+cd /tmp
+if [ -d "pyafipws" ]; then
+    rm -rf pyafipws
+fi
+
+git clone https://github.com/agusmoncada/pyafipws.git >> $LOG_FILE 2>&1
+cd pyafipws
+python3 setup.py install >> $LOG_FILE 2>&1
+check_status "pyafipws manual installation"
 
 # Set permissions for pyafipws if the previous steps succeeded
 log "Setting permissions for pyafipws package."
@@ -118,13 +119,23 @@ else
     log "Warning: pyafipws module not found. Skipping permission setting."
 fi
 
+# Verify the installation
+log "Verifying installations."
+python3 -c "import pyafipws; print('pyafipws version:', pyafipws.__version__)" >> $LOG_FILE 2>&1
+python3 -c "import pysimplesoap; print('pysimplesoap found')" >> $LOG_FILE 2>&1
+
+# Fix any permissions issues with the Odoo directory
+if [ -d "$ODOO_SOURCE" ]; then
+    log "Setting correct permissions for Odoo source directory."
+    chown -R $ODOO_USER:$ODOO_USER "$ODOO_SOURCE" >> $LOG_FILE 2>&1
+fi
+
 # Restart Odoo service if it exists
-if systemctl list-units --type=service | grep -q odoo; then
+if systemctl list-unit-files | grep -q odoo; then
     log "Restarting Odoo service."
     systemctl restart odoo >> $LOG_FILE 2>&1
-    check_status "Odoo service restart"
 else
-    log "Odoo service not found. Please restart manually if needed."
+    log "No Odoo systemd service found. Please restart manually if needed."
 fi
 
 log "Setup completed successfully. Dependencies for Odoo l10n_ar are installed."
