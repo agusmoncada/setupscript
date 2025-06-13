@@ -33,17 +33,17 @@ apt update -y >> $LOG_FILE 2>&1
 check_status "Package update"
 
 log "Installing required system packages."
-apt install -y build-essential wget swig libssl-dev python3-dev python3-pip git >> $LOG_FILE 2>&1
+apt install -y build-essential wget swig libssl-dev python3-dev python3-pip git python3-m2crypto >> $LOG_FILE 2>&1
 check_status "System packages installation"
 
 # Verify Python setup
 log "Python version:"
 python3 --version >> $LOG_FILE 2>&1
 
-# Downgrade setuptools to a version known to work with these packages
-log "Installing compatible setuptools version."
-python3 -m pip install setuptools==58.0.0 wheel >> $LOG_FILE 2>&1
-check_status "Setuptools and wheel installation"
+# Upgrade pip, setuptools, and wheel
+log "Upgrading pip, setuptools, and wheel to latest versions."
+python3 -m pip install --upgrade pip setuptools wheel >> $LOG_FILE 2>&1
+check_status "pip, setuptools, and wheel upgrade"
 
 log "Pip version:"
 python3 -m pip --version >> $LOG_FILE 2>&1
@@ -57,10 +57,6 @@ check_status "Basic Python dependencies installation"
 log "Installing pyOpenSSL."
 python3 -m pip install pyOpenSSL==22.1.0 >> $LOG_FILE 2>&1
 check_status "pyOpenSSL installation"
-
-log "Installing M2Crypto."
-python3 -m pip install M2Crypto >> $LOG_FILE 2>&1
-check_status "M2Crypto installation"
 
 log "Installing httplib2."
 python3 -m pip install "httplib2>=0.7" >> $LOG_FILE 2>&1
@@ -90,7 +86,7 @@ sed -i "s/version='.*'/version='1.08.0'/" setup.py
 python3 setup.py install >> $LOG_FILE 2>&1
 check_status "pysimplesoap manual installation"
 
-# Install pyafipws manually too
+# Install pyafipws manually
 log "Installing pyafipws manually."
 cd /tmp
 if [ -d "pyafipws" ]; then
@@ -104,11 +100,9 @@ check_status "pyafipws manual installation"
 
 # Set permissions for pyafipws if the previous steps succeeded
 log "Setting permissions for pyafipws package."
-# First check if the package exists and is installed
 if python3 -c "import pyafipws" &>/dev/null; then
     PYAFIPWS_PATH=$(python3 -c "import os, pyafipws; print(os.path.dirname(pyafipws.__file__))")
     
-    # Check if odoo user exists before changing ownership
     if id -u $ODOO_USER >/dev/null 2>&1; then
         chown -R $ODOO_USER:$ODOO_USER "$PYAFIPWS_PATH" >> $LOG_FILE 2>&1
         check_status "Setting permissions for pyafipws"
