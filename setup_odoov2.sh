@@ -60,9 +60,13 @@ log "Instalando requerimientos de odoo-argentina."
 pip3 install -r requirements.txt >> $LOG_FILE 2>&1
 check_status "Instalación de requerimientos de odoo-argentina"
 
-log "Instalando pysimplesoap y fpdf desde PyPI directamente."
-pip3 install pysimplesoap fpdf >> $LOG_FILE 2>&1
-check_status "Instalación de paquetes adicionales"
+log "Instalando pysimplesoap desde commit compatible."
+pip3 install git+https://github.com/pysimplesoap/pysimplesoap.git@e1453f385cee119bf8cfb53c763ef212652359f5 >> $LOG_FILE 2>&1
+check_status "Instalación de pysimplesoap"
+
+log "Instalando fpdf."
+pip3 install fpdf >> $LOG_FILE 2>&1
+check_status "Instalación de fpdf"
 
 log "Instalando pyafipws desde fork compatible."
 pip3 install git+https://github.com/agusmoncada/pyafipws.git >> $LOG_FILE 2>&1
