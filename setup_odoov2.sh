@@ -50,15 +50,16 @@ check_status "Clonado de odoo-argentina"
 
 cd odoo-argentina || exit 1
 
-log "Preparando requirements.txt para evitar error con M2Crypto."
+log "Corrigiendo requirements.txt para evitar errores con M2Crypto y PySimpleSOAP."
+# Eliminar M2Crypto y pysimplesoap del requirements
 sed -i '/M2Crypto/d' requirements.txt
+sed -i '/pysimplesoap/d' requirements.txt
 
 log "Instalando requerimientos de odoo-argentina."
 pip3 install -r requirements.txt >> $LOG_FILE 2>&1
 check_status "Instalación de requerimientos de odoo-argentina"
 
-# Instalar paquetes adicionales recomendados por comunidad
-log "Instalando pysimplesoap y fpdf."
+log "Instalando pysimplesoap y fpdf desde PyPI directamente."
 pip3 install pysimplesoap fpdf >> $LOG_FILE 2>&1
 check_status "Instalación de paquetes adicionales"
 
