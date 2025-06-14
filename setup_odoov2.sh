@@ -46,7 +46,7 @@ log "Instalando pysimplesoap desde commit conocido."
 pip install "git+https://github.com/pysimplesoap/pysimplesoap.git@31c85822dec55de8df947a62db99a298b4aa1a51" || { log "Error: Instalación de pysimplesoap falló."; exit 1; }
 
 log "Instalando PyAfipWs desde fork con fix de setuptools."
-pip install "git+https://github.com/agusmoncada/pyafipws.git@py3k" || { log "Error: Instalación de pyafipws falló."; exit 1; }
+pip install "git+https://github.com/agusmoncada/pyafipws.git" || { log "Error: Instalación de pyafipws falló."; exit 1; }
 
 log "Instalación finalizada exitosamente."
 exit 0
