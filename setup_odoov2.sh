@@ -1,103 +1,52 @@
 #!/bin/bash
 
-# Variables de configuración
-LOG_FILE="/var/log/odoo_install.log"
-ODOO_USER="odoo"
+LOGFILE="/var/log/odoo_install.log"
+exec > >(tee -a "$LOGFILE") 2>&1
 
-# Función para registrar logs
 log() {
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a $LOG_FILE
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $1"
 }
-
-# Función para verificar el estado de los comandos
-check_status() {
-    if [ $? -ne 0 ]; then
-        log "Error: $1 falló. Verifique $LOG_FILE para más detalles."
-        exit 1
-    fi
-}
-
-# Asegurar ejecución como root
-if [ "$EUID" -ne 0 ]; then
-    echo "Este script debe ejecutarse como root." >&2
-    exit 1
-fi
 
 log "Inicio de instalación de dependencias para Odoo 16 con localización argentina."
 
 log "Actualizando paquetes del sistema."
-apt update -y >> $LOG_FILE 2>&1
-check_status "Actualización de paquetes"
+apt update -y
 
 log "Instalando dependencias del sistema."
-apt install -y build-essential python3-dev libpq-dev libxml2-dev \
-    libxslt1-dev libldap2-dev libsasl2-dev libffi-dev libssl-dev \
-    python3-pip swig git python3-m2crypto >> $LOG_FILE 2>&1
-check_status "Instalación de paquetes del sistema"
+apt install -y git python3-pip libxml2-dev libxslt1-dev libldap2-dev libsasl2-dev libssl-dev libffi-dev libjpeg-dev libpq-dev gcc g++ python3-dev libxmlsec1-dev libxmlsec1-openssl libfreetype6-dev libjpeg8-dev liblcms2-dev libblas-dev libatlas-base-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev libxmlsec1 libxmlsec1-dev libxmlsec1-openssl
 
 log "Actualizando pip, setuptools y wheel."
-python3 -m pip install --upgrade pip setuptools wheel >> $LOG_FILE 2>&1
-check_status "Actualización de herramientas de Python"
+pip install --upgrade pip wheel
 
-# Clonamos la localización argentina (repositorio CE)
-cd /opt || exit 1
-if [ -d "odoo-argentina" ]; then
-    rm -rf odoo-argentina
-fi
-
-git clone -b 16.0 https://github.com/ingadhoc/odoo-argentina.git >> $LOG_FILE 2>&1
-check_status "Clonado de odoo-argentina"
-
-cd odoo-argentina || exit 1
+log "Forzando setuptools 58.0.4 para compatibilidad con pysimplesoap."
+pip install setuptools==58.0.4
 
 log "Corrigiendo requirements.txt para evitar errores con M2Crypto, PySimpleSOAP y PyAfipWs."
-# Eliminar M2Crypto, pysimplesoap y pyafipws del requirements
-sed -i '/M2Crypto/d' requirements.txt
-sed -i '/pysimplesoap/d' requirements.txt
-sed -i '/pyafipws/d' requirements.txt
+REQUIREMENTS_TMP="/tmp/requirements-argentina.txt"
+cat <<EOF > "$REQUIREMENTS_TMP"
+# Dependencias necesarias para Odoo Argentina - corregidas
+GitPython
+suds-community
+paramiko
+pyopenssl
+cryptography
+python-barcode
+reportlab
+pyserial
+qrcode
+fpdf
+# Comentamos M2Crypto y PyAfipWs por instalación directa
+git+https://github.com/ingadhoc/pyafipws.git@py3k  # ahora lo instalamos aparte
+EOF
 
 log "Instalando requerimientos de odoo-argentina."
-pip3 install -r requirements.txt >> $LOG_FILE 2>&1
-check_status "Instalación de requerimientos de odoo-argentina"
+pip install -r "$REQUIREMENTS_TMP" || { log "Error: Instalación de requerimientos de odoo-argentina falló."; exit 1; }
 
-log "Instalando pysimplesoap desde commit compatible."
-pip3 install git+https://github.com/pysimplesoap/pysimplesoap.git@e1453f385cee119bf8cfb53c763ef212652359f5 >> $LOG_FILE 2>&1
-check_status "Instalación de pysimplesoap"
+log "Instalando pysimplesoap desde commit conocido."
+pip install "git+https://github.com/pysimplesoap/pysimplesoap.git@31c85822dec55de8df947a62db99a298b4aa1a51" || { log "Error: Instalación de pysimplesoap falló."; exit 1; }
 
-log "Instalando fpdf."
-pip3 install fpdf >> $LOG_FILE 2>&1
-check_status "Instalación de fpdf"
+log "Instalando PyAfipWs desde fork con fix de setuptools."
+pip install "git+https://github.com/agusmoncada/pyafipws.git@py3k" || { log "Error: Instalación de pyafipws falló."; exit 1; }
 
-log "Instalando pyafipws desde fork compatible."
-pip3 install git+https://github.com/agusmoncada/pyafipws.git >> $LOG_FILE 2>&1
-check_status "Instalación de pyafipws"
-
-# Crear carpeta cache para PyAFIPWS si no existe
-PYAFIPWS_PATH=$(python3 -c "import os, pyafipws; print(os.path.dirname(pyafipws.__file__))" 2>/dev/null)
-if [ -n "$PYAFIPWS_PATH" ]; then
-    CACHE_DIR="$PYAFIPWS_PATH/cache"
-    if [ ! -d "$CACHE_DIR" ]; then
-        mkdir "$CACHE_DIR"
-        chmod 777 "$CACHE_DIR"
-        log "Carpeta de cache creada en $CACHE_DIR con permisos 777."
-    fi
-else
-    log "Advertencia: pyafipws no encontrado, se omite creación de cache."
-fi
-
-# Parchear OpenSSL para compatibilidad con certificados AFIP
-log "Reduciendo nivel de seguridad en OpenSSL para compatibilidad AFIP."
-sed -i 's/^CipherString = DEFAULT@SECLEVEL=2/CipherString = DEFAULT@SECLEVEL=1/' /etc/ssl/openssl.cnf
-check_status "Parche de OpenSSL"
-
-# Reiniciar servicio de Odoo si existe
-if systemctl list-unit-files | grep -q odoo; then
-    log "Reiniciando servicio de Odoo."
-    systemctl restart odoo >> $LOG_FILE 2>&1
-    check_status "Reinicio de Odoo"
-else
-    log "Servicio Odoo no encontrado, omitiendo reinicio."
-fi
-
-log "Instalación finalizada exitosamente. Localización argentina lista para configurar en Odoo."
+log "Instalación finalizada exitosamente."
 exit 0
