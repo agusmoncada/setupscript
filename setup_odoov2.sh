@@ -50,10 +50,11 @@ check_status "Clonado de odoo-argentina"
 
 cd odoo-argentina || exit 1
 
-log "Corrigiendo requirements.txt para evitar errores con M2Crypto y PySimpleSOAP."
-# Eliminar M2Crypto y pysimplesoap del requirements
+log "Corrigiendo requirements.txt para evitar errores con M2Crypto, PySimpleSOAP y PyAfipWs."
+# Eliminar M2Crypto, pysimplesoap y pyafipws del requirements
 sed -i '/M2Crypto/d' requirements.txt
 sed -i '/pysimplesoap/d' requirements.txt
+sed -i '/pyafipws/d' requirements.txt
 
 log "Instalando requerimientos de odoo-argentina."
 pip3 install -r requirements.txt >> $LOG_FILE 2>&1
@@ -62,6 +63,10 @@ check_status "Instalación de requerimientos de odoo-argentina"
 log "Instalando pysimplesoap y fpdf desde PyPI directamente."
 pip3 install pysimplesoap fpdf >> $LOG_FILE 2>&1
 check_status "Instalación de paquetes adicionales"
+
+log "Instalando pyafipws desde fork compatible."
+pip3 install git+https://github.com/agusmoncada/pyafipws.git >> $LOG_FILE 2>&1
+check_status "Instalación de pyafipws"
 
 # Crear carpeta cache para PyAFIPWS si no existe
 PYAFIPWS_PATH=$(python3 -c "import os, pyafipws; print(os.path.dirname(pyafipws.__file__))" 2>/dev/null)
