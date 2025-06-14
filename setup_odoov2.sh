@@ -50,6 +50,9 @@ check_status "Clonado de odoo-argentina"
 
 cd odoo-argentina || exit 1
 
+log "Preparando requirements.txt para evitar error con M2Crypto."
+sed -i '/M2Crypto/d' requirements.txt
+
 log "Instalando requerimientos de odoo-argentina."
 pip3 install -r requirements.txt >> $LOG_FILE 2>&1
 check_status "Instalación de requerimientos de odoo-argentina"
