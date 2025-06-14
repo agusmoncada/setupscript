@@ -1,136 +1,90 @@
 #!/bin/bash
 
-# Define log file and Odoo specific paths
+# Variables de configuración
 LOG_FILE="/var/log/odoo_install.log"
-ODOO_CONFIG="/etc/odona/stagingryh.cloudpepper.site/odoo.conf"
 ODOO_USER="odoo"
-ODOO_SOURCE="/usr/lib/python3/dist-packages/odoo"
 
-# Function to log messages
+# Función para registrar logs
 log() {
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a $LOG_FILE
 }
 
-# Function to check command execution status
+# Función para verificar el estado de los comandos
 check_status() {
     if [ $? -ne 0 ]; then
-        log "Error: $1 failed. Check $LOG_FILE for details."
+        log "Error: $1 falló. Verifique $LOG_FILE para más detalles."
         exit 1
     fi
 }
 
-# Ensure running as root
+# Asegurar ejecución como root
 if [ "$EUID" -ne 0 ]; then
-    echo "Error: Please run as root" >&2
+    echo "Este script debe ejecutarse como root." >&2
     exit 1
 fi
 
-log "Starting Odoo v16 server setup for Cloudpepper environment."
+log "Inicio de instalación de dependencias para Odoo 16 con localización argentina."
 
-# Update and install system dependencies
-log "Updating package list."
+log "Actualizando paquetes del sistema."
 apt update -y >> $LOG_FILE 2>&1
-check_status "Package update"
+check_status "Actualización de paquetes"
 
-log "Installing required system packages."
-apt install -y build-essential wget swig libssl-dev python3-dev python3-pip git python3-m2crypto >> $LOG_FILE 2>&1
-check_status "System packages installation"
+log "Instalando dependencias del sistema."
+apt install -y build-essential python3-dev libpq-dev libxml2-dev \
+    libxslt1-dev libldap2-dev libsasl2-dev libffi-dev libssl-dev \
+    python3-pip swig git python3-m2crypto >> $LOG_FILE 2>&1
+check_status "Instalación de paquetes del sistema"
 
-# Verify Python setup
-log "Python version:"
-python3 --version >> $LOG_FILE 2>&1
-
-# Upgrade pip, setuptools, and wheel
-log "Upgrading pip, setuptools, and wheel to latest versions."
+log "Actualizando pip, setuptools y wheel."
 python3 -m pip install --upgrade pip setuptools wheel >> $LOG_FILE 2>&1
-check_status "pip, setuptools, and wheel upgrade"
+check_status "Actualización de herramientas de Python"
 
-log "Pip version:"
-python3 -m pip --version >> $LOG_FILE 2>&1
-
-# Install Python dependencies for l10n_ar
-log "Installing Python dependencies for l10n_ar."
-python3 -m pip install astor future >> $LOG_FILE 2>&1
-check_status "Basic Python dependencies installation"
-
-# Install each critical package separately with error checking
-log "Installing pyOpenSSL."
-python3 -m pip install pyOpenSSL==22.1.0 >> $LOG_FILE 2>&1
-check_status "pyOpenSSL installation"
-
-log "Installing httplib2."
-python3 -m pip install "httplib2>=0.7" >> $LOG_FILE 2>&1
-check_status "httplib2 installation"
-
-log "Installing cryptography."
-python3 -m pip install cryptography==38.0.4 >> $LOG_FILE 2>&1
-check_status "cryptography installation"
-
-# Clone pysimplesoap manually instead of using pip
-log "Installing pysimplesoap manually."
-cd /tmp
-if [ -d "pysimplesoap" ]; then
-    rm -rf pysimplesoap
+# Clonamos la localización argentina (repositorio CE)
+cd /opt || exit 1
+if [ -d "odoo-argentina" ]; then
+    rm -rf odoo-argentina
 fi
 
-git clone https://github.com/pysimplesoap/pysimplesoap.git >> $LOG_FILE 2>&1
-cd pysimplesoap
-git checkout e1453f385cee119bf8cfb53c763ef212652359f5 >> $LOG_FILE 2>&1
+git clone -b 16.0 https://github.com/ingadhoc/odoo-argentina.git >> $LOG_FILE 2>&1
+check_status "Clonado de odoo-argentina"
 
-# Apply a quick fix to the setup.py file
-log "Applying fix to pysimplesoap setup.py."
-sed -i 's/console=\[/# console=\[/' setup.py
-sed -i "s/version='.*'/version='1.08.0'/" setup.py
+cd odoo-argentina || exit 1
 
-# Install the package
-python3 setup.py install >> $LOG_FILE 2>&1
-check_status "pysimplesoap manual installation"
+log "Instalando requerimientos de odoo-argentina."
+pip3 install -r requirements.txt >> $LOG_FILE 2>&1
+check_status "Instalación de requerimientos de odoo-argentina"
 
-# Install pyafipws manually
-log "Installing pyafipws manually."
-cd /tmp
-if [ -d "pyafipws" ]; then
-    rm -rf pyafipws
-fi
+# Instalar paquetes adicionales recomendados por comunidad
+log "Instalando pysimplesoap y fpdf."
+pip3 install pysimplesoap fpdf >> $LOG_FILE 2>&1
+check_status "Instalación de paquetes adicionales"
 
-git clone https://github.com/agusmoncada/pyafipws.git >> $LOG_FILE 2>&1
-cd pyafipws
-python3 setup.py install >> $LOG_FILE 2>&1
-check_status "pyafipws manual installation"
-
-# Set permissions for pyafipws if the previous steps succeeded
-log "Setting permissions for pyafipws package."
-if python3 -c "import pyafipws" &>/dev/null; then
-    PYAFIPWS_PATH=$(python3 -c "import os, pyafipws; print(os.path.dirname(pyafipws.__file__))")
-    
-    if id -u $ODOO_USER >/dev/null 2>&1; then
-        chown -R $ODOO_USER:$ODOO_USER "$PYAFIPWS_PATH" >> $LOG_FILE 2>&1
-        check_status "Setting permissions for pyafipws"
-    else
-        log "Warning: $ODOO_USER user does not exist. Skipping permission setting for pyafipws."
+# Crear carpeta cache para PyAFIPWS si no existe
+PYAFIPWS_PATH=$(python3 -c "import os, pyafipws; print(os.path.dirname(pyafipws.__file__))" 2>/dev/null)
+if [ -n "$PYAFIPWS_PATH" ]; then
+    CACHE_DIR="$PYAFIPWS_PATH/cache"
+    if [ ! -d "$CACHE_DIR" ]; then
+        mkdir "$CACHE_DIR"
+        chmod 777 "$CACHE_DIR"
+        log "Carpeta de cache creada en $CACHE_DIR con permisos 777."
     fi
 else
-    log "Warning: pyafipws module not found. Skipping permission setting."
+    log "Advertencia: pyafipws no encontrado, se omite creación de cache."
 fi
 
-# Verify the installation
-log "Verifying installations."
-python3 -c "import pyafipws; print('pyafipws version:', pyafipws.__version__)" >> $LOG_FILE 2>&1
-python3 -c "import pysimplesoap; print('pysimplesoap found')" >> $LOG_FILE 2>&1
+# Parchear OpenSSL para compatibilidad con certificados AFIP
+log "Reduciendo nivel de seguridad en OpenSSL para compatibilidad AFIP."
+sed -i 's/^CipherString = DEFAULT@SECLEVEL=2/CipherString = DEFAULT@SECLEVEL=1/' /etc/ssl/openssl.cnf
+check_status "Parche de OpenSSL"
 
-# Fix any permissions issues with the Odoo directory
-if [ -d "$ODOO_SOURCE" ]; then
-    log "Setting correct permissions for Odoo source directory."
-    chown -R $ODOO_USER:$ODOO_USER "$ODOO_SOURCE" >> $LOG_FILE 2>&1
-fi
-
-# Restart Odoo service if it exists
+# Reiniciar servicio de Odoo si existe
 if systemctl list-unit-files | grep -q odoo; then
-    log "Restarting Odoo service."
+    log "Reiniciando servicio de Odoo."
     systemctl restart odoo >> $LOG_FILE 2>&1
+    check_status "Reinicio de Odoo"
 else
-    log "No Odoo systemd service found. Please restart manually if needed."
+    log "Servicio Odoo no encontrado, omitiendo reinicio."
 fi
 
-log "Setup completed successfully. Dependencies for Odoo l10n_ar are installed."
+log "Instalación finalizada exitosamente. Localización argentina lista para configurar en Odoo."
 exit 0
